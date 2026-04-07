@@ -1,0 +1,9 @@
+#include <stdlib.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+#include <math.h>
+#include "arena.h"
+#include "duckbox.h"
+#include "print.h"
+#include "error.h"

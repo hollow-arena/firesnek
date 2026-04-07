@@ -1,0 +1,12 @@
+deprecated/
+tests/
+__pycache__/
+.vscode/
+
+*.exe
+*.o
+out
+
+dist/
+build/
+*.egg-info/
