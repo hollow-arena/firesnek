@@ -19,11 +19,12 @@ typedef struct estus__arena_s {
 } estus__arena;
 
 typedef struct estus__registry_s {
-    estus__arena *arenas;    // Pointer to array of arena structs (metadata)
-    uint64_t     *available; // bitmap of available arenas, 0 is available, 1 is occupied
-                             // up to 2^16 / 64 = 1024 uint64_t words at max arenas
-    uint16_t      cap;       // arena capacity (number of arena slots)
-    uint16_t      idx;       // cursor into bitmap word array; stays on words with free slots
+    estus__arena *arenas;          // Pointer to array of arena structs (metadata)
+    uint64_t     *available;       // bitmap of available arenas, 0 is available, 1 is occupied
+                                   // up to 2^16 / 64 = 1024 uint64_t words at max arenas
+    uint16_t      cap;             // arena capacity (number of arena slots)
+    uint16_t      idx;             // cursor into bitmap word array; stays on words with free slots
+    estus__duck   char_table[256]; // stores all relevant characters
 } estus__registry;
 
 // ─── Arena-aware duck unpack ─────────────────────────────────────────────────

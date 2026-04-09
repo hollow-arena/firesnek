@@ -52,8 +52,6 @@
 #define PTR_B_MAP 0x7FF7000000000000ULL // tag pattern for PTR / BOOL
 #define NEG_INT64 0xFFF8000000000000ULL // upper bits to strip from INT/UINT duck
 
-// TODO: Define remaining CHAR/BYTE tag constants
-
 // ─── Core types ─────────────────────────────────────────────────────────────
 
 typedef uint64_t estus__duck;
@@ -65,8 +63,8 @@ typedef enum {
     FLOAT,       // normal IEEE 754 double (exponent not all-ones, or mantissa zero)
     NONE,        // 0, 0000  — bit 63 = 0, set bit 62 for "empty" for containers
     _NAN,        // 1, 0000  — bit 63 = 1
-    CHAR,        // 0, 0001
-    BYTE,        // 1, 0001
+    BIGINT,      // 0, 0001  — Stores pointer value
+    COMPLEX,     // 1, 0001  — Stores pointer value
     STR,         // 0, 0010  — Stores pointer value
     STRBYTES,    // 1, 0010  — Stores pointer value
     LIST,        // 0, 0011  — Stores pointer value
@@ -143,6 +141,8 @@ static inline estus__duck estus__packf(double d) {
              | ((uint64_t)(variant) << 63);                                    \
     }
 
+ESTUS__PACK_REF(bigint,   1, 0)  // BIGINT    — arbitrary-precision integer
+ESTUS__PACK_REF(complex,  1, 1)  // COMPLEX   — complex number (real + imag pair)
 ESTUS__PACK_REF(str,      2, 0)  // STR       — heap string (chars)
 ESTUS__PACK_REF(strbytes, 2, 1)  // STRBYTES  — heap string (raw bytes)
 ESTUS__PACK_REF(list,     3, 0)  // LIST
@@ -166,16 +166,6 @@ static inline estus__duck estus__packp(uint16_t arena_id, uint32_t offset,
          | ((uint64_t)arena_id << 32)
          | (uint64_t)offset
          | ((uint64_t)variant  << 63);
-}
-
-// CHAR: single ASCII char in bits 7:0
-static inline estus__duck estus__packc(unsigned char c) {
-    return FULL_EXP | (1ULL << 48) | (uint64_t)c;
-}
-
-// BYTE: single raw byte
-static inline estus__duck estus__packx(unsigned char x) {
-    return FULL_EXP | (1ULL << 48) | (uint64_t)x | LARGE_BIT;
 }
 
 // BOOL: PTR_B_MAP | LARGE_BIT | (0 or 1)
@@ -206,23 +196,6 @@ static inline double estus__unpackf(estus__duck duck) {
     memcpy(&result, &duck, 8);
     return result;
 }
-
-// Unpacks the first (or only) char/byte — also valid for BYTE1
-static inline unsigned char estus__unpackc(estus__duck duck) {
-    return (unsigned char)(duck & 0xFF);
-}
-
-// Unpacks the entire "short string" of chars/bytes — returns a pointer into the duck's own bytes.
-// Caller must pass a pointer to the duck so the returned pointer is valid for the duck's lifetime.
-// Use estus__unpacks_len() to get the byte count.
-static inline unsigned char* estus__unpacks(estus__duck *duck) {
-    return (unsigned char*)duck;
-}
-
-static inline uint8_t estus__unpacks_len(estus__duck duck) {
-    return (duck >> 48) & 7;
-}
-
 
 static inline bool estus__unpackb(estus__duck duck) {
     return (duck & 1);
@@ -256,7 +229,29 @@ estus__duck   estus__casti(estus__duck duck);
 estus__duck   estus__castf(estus__duck duck);
 estus__duck   estus__castb(estus__duck duck);
 
-// TODO: chr(int)  → CHAR duck of the Unicode codepoint
-// TODO: ord(char) → INT  duck of the Unicode codepoint
+estus__duck   estus__add(estus__registry *registry, estus__arena *arena, estus__duck a, estus__duck b);
+estus__duck   estus__sub(estus__duck a, estus__duck b);
+estus__duck   estus__mul(estus__registry *registry, estus__arena *arena, estus__duck a, estus__duck b);
+estus__duck   estus__div(estus__duck a, estus__duck b);
+estus__duck   estus__floordiv(estus__duck a, estus__duck b);
+estus__duck   estus__mod(estus__duck a, estus__duck b);
+estus__duck   estus__pow(estus__duck a, estus__duck b);
 
+estus__duck   estus__band(estus__duck a, estus__duck b);
+estus__duck   estus__bor(estus__duck a, estus__duck b);
+estus__duck   estus__bxor(estus__duck a, estus__duck b);
+estus__duck   estus__lshift(estus__duck a, estus__duck b);
+estus__duck   estus__rshift(estus__duck a, estus__duck b);
+estus__duck   estus__invert(estus__duck a);
+estus__duck   estus__abs(estus__duck a);
+
+estus__duck   estus__eq(estus__duck a, estus__duck b);
+estus__duck   estus__noteq(estus__duck a, estus__duck b);
+estus__duck   estus__lt(estus__duck a, estus__duck b);
+estus__duck   estus__lte(estus__duck a, estus__duck b);
+estus__duck   estus__gt(estus__duck a, estus__duck b);
+estus__duck   estus__gte(estus__duck a, estus__duck b);
+
+estus__duck   estus__index(estus__registry *registry, estus__duck obj, estus__duck idx);
+estus__duck   estus__len(estus__registry *registry, estus__duck duck);
 #endif // DUCKBOX_H

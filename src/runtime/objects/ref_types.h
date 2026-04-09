@@ -17,7 +17,7 @@
 
 // This struct will fit in a 16-byte allocation. Max size of a list in arena is 2^31 ducks with current 32GB limit.
 // Minus one to account for the metadata struct
-#define MAX_CAP   2147483648UL
+#define MAX_CAP   2147483648ULL
 // A list of 2^64 ducks would be 128 EXABYTES (impossibly large).
 // Still, consider expanding this value and not hardcoding for the 32-bit and 128-bit extensions in later versions.
 

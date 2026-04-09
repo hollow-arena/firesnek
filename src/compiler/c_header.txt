@@ -7,3 +7,5 @@
 #include "duckbox.h"
 #include "print.h"
 #include "error.h"
+#include "objects/string.h"
+#include "objects/list.h"
