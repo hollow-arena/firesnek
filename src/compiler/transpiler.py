@@ -8,7 +8,8 @@ from typing import Sequence
 from errors import CompileError, Loc
 from ast_parser import parse
 
-_bop_counter = itertools.count()
+_bop_counter  = itertools.count()
+_iter_counter = itertools.count()
 
 # --- Operator tables ---
 
@@ -241,12 +242,17 @@ def _ann_assign(node: ast.AnnAssign, c_lines: list[str], defined_vars: set[str])
 def _assign(node: ast.Assign, c_lines: list[str], defined_vars: set[str]) -> None:
     value = _expr_str(node.value)
     for target in node.targets:
-        name = _expr_str(target)  # type: ignore[arg-type]
-        if name not in defined_vars:
-            c_lines.append(f"estus__duck {name} = {value};")
-            defined_vars.add(name)
+        if isinstance(target, ast.Subscript):
+            obj = _expr_str(target.value)   # type: ignore[arg-type]
+            idx = _expr_str(target.slice)   # type: ignore[arg-type]
+            c_lines.append(f"*estus__index_ptr(&_estus_reg, {obj}, {idx}) = {value};")
         else:
-            c_lines.append(f"{name} = {value};")
+            name = _expr_str(target)  # type: ignore[arg-type]
+            if name not in defined_vars:
+                c_lines.append(f"estus__duck {name} = {value};")
+                defined_vars.add(name)
+            else:
+                c_lines.append(f"{name} = {value};")
 
 
 def _aug_assign(node: ast.AugAssign, c_lines: list[str]) -> None:
@@ -285,17 +291,137 @@ def _while_stmt(node: ast.While, c_lines: list[str], defined_vars: set[str]) -> 
 
 
 def _for_stmt(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None:
-    # Only range() is supported for now
-    if not (isinstance(node.iter, ast.Call)
-            and isinstance(node.iter.func, ast.Name)
-            and node.iter.func.id == "range"):
-        c_lines.append(f"/* TODO: for-in over non-range iterables */")
-        return
+    if (isinstance(node.iter, ast.Call)
+            and isinstance(node.iter.func, ast.Name)):
+        match node.iter.func.id:
+            case "range":
+                _for_range(node, c_lines, defined_vars)
+                return
+            case "enumerate":
+                _for_enumerate(node, c_lines, defined_vars)
+                return
+            case "zip":
+                _for_zip(node, c_lines, defined_vars)
+                return
+    _for_iter(node, c_lines, defined_vars)
 
-    args = node.iter.args
+
+def _for_iter_indexed(iter_tmp: str, var: str, node: ast.For,
+                      c_lines: list[str], defined_vars: set[str]) -> None:
+    """Emit an index-based for loop over an already-stored iterable duck."""
+    n = next(_iter_counter)
+    len_tmp = f"_iter{n}_len"
+    c_lines.append(f"int64_t {len_tmp} = estus__unpacki(estus__len(&_estus_reg, {iter_tmp}));")
+    c_lines.append(f"for (int64_t _estus_i = 0; _estus_i < {len_tmp}; _estus_i++) {{")
+    c_lines.append(f"estus__duck {var} = estus__index(&_estus_reg, {iter_tmp}, estus__packi(_estus_i));")
+    defined_vars.add(var)
+    _compile_stmts(node.body, c_lines, defined_vars)
+    c_lines.append("}")
+
+
+def _for_iter(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None:
+    n = next(_iter_counter)
+    iter_tmp = f"_iter{n}"
+    var = _expr_str(node.target)  # type: ignore[arg-type]
+
+    c_lines.append("{")
+    c_lines.append(f"estus__duck {iter_tmp} = {_expr_str(node.iter)};")
+    c_lines.append(f"switch (_get_type_enum({iter_tmp})) {{")
+
+    c_lines.append(f"case STR: case LIST: case LISTBYTES: case TUPLE: {{")
+    _for_iter_indexed(iter_tmp, var, node, c_lines, defined_vars)
+    c_lines.append("break;")
+    c_lines.append("}")
+
+    c_lines.append("case SET: case DEQUE: case DICT:")
+    c_lines.append("/* TODO: node-walking for SET/DEQUE/DICT */")
+    c_lines.append("break;")
+
+    c_lines.append("default:")
+    c_lines.append('estus__panic_roll(ESTUS_ERR_TYPE, "object is not iterable");')
+    c_lines.append("}")  # switch
+    c_lines.append("}")  # outer block
+
+
+def _for_enumerate(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None:
+    args = node.iter.args  # type: ignore[union-attr]
+    if len(args) not in (1, 2):
+        raise CompileError(
+            Loc(node.iter.lineno, node.iter.col_offset),  # type: ignore[union-attr]
+            f"enumerate() takes 1–2 arguments ({len(args)} given)"
+        )
+    # target must be a 2-tuple unpack: for i, x in enumerate(...)
+    if not (isinstance(node.target, ast.Tuple) and len(node.target.elts) == 2):
+        raise CompileError(
+            Loc(node.target.lineno, node.target.col_offset),
+            "enumerate() target must unpack to exactly 2 variables"
+        )
+    idx_var = _expr_str(node.target.elts[0])
+    val_var = _expr_str(node.target.elts[1])
+    start   = _expr_str(args[1]) if len(args) == 2 else "estus__packi(0)"
+
+    n = next(_iter_counter)
+    iter_tmp = f"_iter{n}"
+    len_tmp  = f"_iter{n}_len"
+    idx_tmp  = f"_iter{n}_idx"
+
+    c_lines.append("{")
+    c_lines.append(f"estus__duck {iter_tmp} = {_expr_str(args[0])};")
+    c_lines.append(f"int64_t {len_tmp} = estus__unpacki(estus__len(&_estus_reg, {iter_tmp}));")
+    c_lines.append(f"int64_t {idx_tmp} = estus__unpacki({start});")
+    c_lines.append(f"for (int64_t _estus_i = 0; _estus_i < {len_tmp}; _estus_i++, {idx_tmp}++) {{")
+    c_lines.append(f"estus__duck {idx_var} = estus__packi({idx_tmp});")
+    c_lines.append(f"estus__duck {val_var} = estus__index(&_estus_reg, {iter_tmp}, estus__packi(_estus_i));")
+    defined_vars.update({idx_var, val_var})
+    _compile_stmts(node.body, c_lines, defined_vars)
+    c_lines.append("}")
+    c_lines.append("}")
+
+
+def _for_zip(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None:
+    args = node.iter.args  # type: ignore[union-attr]
+    if len(args) < 2:
+        raise CompileError(
+            Loc(node.iter.lineno, node.iter.col_offset),  # type: ignore[union-attr]
+            f"zip() requires at least 2 iterables ({len(args)} given)"
+        )
+    if not (isinstance(node.target, ast.Tuple) and len(node.target.elts) == len(args)):
+        raise CompileError(
+            Loc(node.target.lineno, node.target.col_offset),
+            f"zip() target must unpack to exactly {len(args)} variables"
+        )
+    vars_ = [_expr_str(e) for e in node.target.elts]  # type: ignore[arg-type]
+
+    n = next(_iter_counter)
+    iter_tmps = [f"_iter{n}_{i}" for i in range(len(args))]
+    len_tmps  = [f"_iter{n}_{i}_len" for i in range(len(args))]
+
+    c_lines.append("{")
+    for arg, iter_tmp, len_tmp in zip(args, iter_tmps, len_tmps):
+        c_lines.append(f"estus__duck {iter_tmp} = {_expr_str(arg)};")
+        c_lines.append(f"int64_t {len_tmp} = estus__unpacki(estus__len(&_estus_reg, {iter_tmp}));")
+
+    # zip stops at the shortest — use the first as the bound, check others
+    min_len = f"{len_tmps[0]}"
+    for lt in len_tmps[1:]:
+        min_len = f"({min_len} < {lt} ? {min_len} : {lt})"
+
+    c_lines.append(f"for (int64_t _estus_i = 0; _estus_i < {min_len}; _estus_i++) {{")
+    for var, iter_tmp in zip(vars_, iter_tmps):
+        c_lines.append(f"estus__duck {var} = estus__index(&_estus_reg, {iter_tmp}, estus__packi(_estus_i));")
+        defined_vars.add(var)
+    _compile_stmts(node.body, c_lines, defined_vars)
+    c_lines.append("}")
+    c_lines.append("}")
+
+
+def _for_range(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None:
+    args = node.iter.args  # type: ignore[union-attr]
     if len(args) not in (1, 2, 3):
-        c_lines.append("/* TODO: range() requires 1–3 arguments */")
-        return
+        raise CompileError(
+            Loc(node.iter.lineno, node.iter.col_offset),  # type: ignore[union-attr]
+            f"range() takes 1–3 arguments ({len(args)} given)"
+        )
 
     var = _expr_str(node.target)  # type: ignore[arg-type]
 
@@ -305,8 +431,10 @@ def _for_stmt(node: ast.For, c_lines: list[str], defined_vars: set[str]) -> None
     for arg in args:
         if isinstance(arg, ast.Constant):
             if not isinstance(arg.value, int) or isinstance(arg.value, bool):
-                c_lines.append(f"/* TODO: range() argument must be an integer */")
-                return
+                raise CompileError(
+                    Loc(arg.lineno, arg.col_offset),
+                    "range() argument must be an integer"
+                )
             needs_guard.append(False)
         else:
             needs_guard.append(True)

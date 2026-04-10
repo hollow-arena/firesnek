@@ -7,7 +7,8 @@
 
 estus__duck estus__list_create(estus__registry *registry, estus__arena *arena, estus__duck *init, uint32_t len);
 estus__duck estus__list_len(estus__registry* registry, estus__duck list_ptr);
-estus__duck estus__list_index_value(estus__registry *registry, estus__duck list, estus__duck duck_idx);
+estus__duck  estus__list_index_value(estus__registry *registry, estus__duck list, estus__duck duck_idx);
+estus__duck* estus__list_index_ptr  (estus__registry *registry, estus__duck list, estus__duck duck_idx);
 estus__duck estus__list_resize(estus__registry *registry, estus__arena *arena, estus__list_metadata *list);
 estus__duck estus__list_concat(estus__registry *registry, estus__arena *arena, estus__duck list1, estus__duck list2);
 estus__duck estus__list_mult(estus__registry *registry, estus__arena *arena, estus__duck list, estus__duck times);

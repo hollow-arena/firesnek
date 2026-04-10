@@ -252,6 +252,7 @@ estus__duck   estus__lte(estus__duck a, estus__duck b);
 estus__duck   estus__gt(estus__duck a, estus__duck b);
 estus__duck   estus__gte(estus__duck a, estus__duck b);
 
-estus__duck   estus__index(estus__registry *registry, estus__duck obj, estus__duck idx);
+estus__duck   estus__index    (estus__registry *registry, estus__duck obj, estus__duck idx);
+estus__duck*  estus__index_ptr(estus__registry *registry, estus__duck obj, estus__duck idx);
 estus__duck   estus__len(estus__registry *registry, estus__duck duck);
 #endif // DUCKBOX_H

@@ -318,6 +318,19 @@ estus__duck estus__index(estus__registry *registry, estus__duck obj, estus__duck
     return estus__packn();
 }
 
+estus__duck* estus__index_ptr(estus__registry *registry, estus__duck obj, estus__duck idx) {
+    estus__type_enum ti = _get_type_enum(idx);
+    if (ti != INT && ti != UINT) {
+        estus__panic_roll(ESTUS_ERR_INDEX, "index must be valid integer");
+        return NULL;
+    }
+    switch (_get_type_enum(obj)) {
+        case LIST: return estus__list_index_ptr(registry, obj, idx);
+        default:   estus__panic_roll(ESTUS_ERR_TYPE, "type does not support item assignment");
+    }
+    return NULL;
+}
+
 // TODO: Add rest of len API once structures fleshed out
 estus__duck estus__len(estus__registry *registry, estus__duck duck) {
     switch (_get_type_enum(duck)) {

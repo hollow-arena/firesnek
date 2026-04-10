@@ -51,6 +51,20 @@ estus__duck estus__list_index_value(estus__registry *registry, estus__duck list,
     return estus__list_data(data)[idx];
 }
 
+estus__duck* estus__list_index_ptr(estus__registry *registry, estus__duck list, estus__duck duck_idx) {
+    int64_t idx = estus__unpacki(duck_idx);
+    estus__list_metadata *data = (estus__list_metadata*)estus__unpackp(registry, list);
+
+    if (idx < -(int64_t)data->len || idx >= (int64_t)data->len) {
+        estus__panic_roll(ESTUS_ERR_INDEX, "Given index out of range");
+        return NULL;
+    }
+
+    if (idx < 0) idx += data->len;
+
+    return &estus__list_data(data)[idx];
+}
+
 // TODO: Consider after moving resized list to arena bumper: compacting and updating local pointers as needed. Not urgent.
 // Returns new location of resized list, make sure to assign when calling
 // TODO: Allow check to see if can realloc in place if list is final item in arena
